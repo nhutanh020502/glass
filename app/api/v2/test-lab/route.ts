@@ -1,5 +1,7 @@
 import { getTestLabDashboard } from "../../../../db/v2";
 
+export const dynamic = "force-dynamic";
+
 export async function GET() {
   try {
     return Response.json(await getTestLabDashboard(), { headers: { "Cache-Control": "no-store" } });

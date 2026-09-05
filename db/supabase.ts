@@ -1,39 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import postgres from 'postgres';
-import { createClient } from '@supabase/supabase-js';
-import dotenv from 'dotenv';
-import path from 'path';
-
-// Load environment variables
-try {
-  dotenv.config({ path: path.resolve(process.cwd(), '.env.local') });
-  dotenv.config();
-} catch {}
-
-const DEFAULT_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Indvd2psbGRuYmxlZ3diZG9xdHJmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODg1NDIwMzUsImV4cCI6MjEwNDExODAzNX0.KFYwsYIaXoyYdcxipEiY0rmwNTtp13DQX3WXUWhIRNc';
-
-// Supabase REST client (Lazy initialization to prevent boot-time errors)
-let _supabaseClient: ReturnType<typeof createClient> | null = null;
-export function getSupabaseClient() {
-  if (!_supabaseClient) {
-    const url = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://wowjlldnblegwbdoqtrf.supabase.co';
-    const key =
-      process.env.SUPABASE_SERVICE_ROLE_KEY ||
-      process.env.SUPABASE_ANON_KEY ||
-      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ||
-      DEFAULT_KEY;
-    _supabaseClient = createClient(url, key || DEFAULT_KEY);
-  }
-  return _supabaseClient;
-}
-
-export const supabase = new Proxy({} as ReturnType<typeof createClient>, {
-  get(_target, prop) {
-    const client = getSupabaseClient();
-    const val = (client as any)[prop];
-    return typeof val === 'function' ? val.bind(client) : val;
-  },
-});
+// Supabase REST client stub (application runs directly on PostgreSQL pooler)
+export const supabase: any = null;
 
 // Postgres client connection singleton
 let pgClient: postgres.Sql | null = null;

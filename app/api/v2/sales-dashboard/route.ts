@@ -1,5 +1,7 @@
 import { getSalesDashboard } from "../../../../db/v2";
 
+export const dynamic = "force-dynamic";
+
 export async function GET(request: Request) {
   try {
     const params = new URL(request.url).searchParams;

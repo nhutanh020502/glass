@@ -1,5 +1,7 @@
 import { getDashboard } from "../../../db/store";
 
+export const dynamic = "force-dynamic";
+
 export async function GET() {
   try {
     return Response.json(await getDashboard(), {
