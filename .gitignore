@@ -38,3 +38,8 @@ next-env.d.ts
 /.wrangler/
 /outputs/
 /work/
+
+# local internal documentation
+BUSINESS_RULES.md
+SYSTEM_DESIGN.md
+FEATURES_SPEC.md
