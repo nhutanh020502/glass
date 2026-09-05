@@ -30,8 +30,9 @@ export function getPg(): postgres.Sql {
     }
     pgClient = postgres(connStr, {
       ssl: 'require',
-      max: 20,
-      idle_timeout: 20,
+      max: 25,
+      idle_timeout: 30,
+      prepare: false,
       onnotice: () => {},
     });
   }
@@ -150,12 +151,7 @@ export function createDbAdapter(): DatabaseAdapter {
     },
 
     async batch(statements: any[]): Promise<any[]> {
-      const results: any[] = [];
-      for (const stmt of statements) {
-        const res = await stmt.all();
-        results.push(res);
-      }
-      return results;
+      return await Promise.all(statements.map((stmt) => stmt.all()));
     },
   };
 }
