@@ -29,8 +29,9 @@ export function getPg(): postgres.Sql {
     }
     pgClient = postgres(connStr, {
       ssl: 'require',
-      max: 10,
+      max: 20,
       idle_timeout: 20,
+      onnotice: () => {},
     });
   }
   return pgClient;
@@ -70,7 +71,23 @@ export function translateSql(rawSql: string, params: unknown[] = []): { query: s
     }
   }
 
-  // 5. Replace '?' with '$1, $2, ...'
+  // 5. GROUP_CONCAT -> STRING_AGG
+  query = query.replace(/GROUP_CONCAT\s*\(\s*DISTINCT\s+([^),]+)\s*,\s*('[^']*'|"[^"]*")\s*\)/gi, "STRING_AGG(DISTINCT ($1)::text, $2)");
+  query = query.replace(/GROUP_CONCAT\s*\(\s*DISTINCT\s+([^)]+)\s*\)/gi, "STRING_AGG(DISTINCT ($1)::text, ', ')");
+  query = query.replace(/GROUP_CONCAT\s*\(\s*([^),]+)\s*,\s*('[^']*'|"[^"]*")\s*\)/gi, "STRING_AGG(($1)::text, $2)");
+  query = query.replace(/GROUP_CONCAT\s*\(\s*([^)]+)\s*\)/gi, "STRING_AGG(($1)::text, ', ')");
+
+  // 6. INSTR(a, b) -> STRPOS(a, b)
+  query = query.replace(/INSTR\s*\(\s*([^,]+)\s*,\s*([^)]+)\s*\)/gi, "STRPOS($1, $2)");
+
+  // 7. substr(date('now'), 1, 7) or date('now')
+  query = query.replace(/substr\s*\(\s*date\s*\(\s*['"]now['"]\s*\)\s*,\s*1\s*,\s*7\s*\)/gi, "to_char(CURRENT_DATE, 'YYYY-MM')");
+  query = query.replace(/date\s*\(\s*['"]now['"]\s*\)/gi, "CURRENT_DATE::text");
+
+  // 8. Replace rowid with id
+  query = query.replace(/\browid\b/gi, 'id');
+
+  // 9. Replace '?' with '$1, $2, ...'
   let paramIndex = 1;
   query = query.replace(/\?/g, () => `$${paramIndex++}`);
 

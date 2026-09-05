@@ -382,7 +382,7 @@ function upsertCustomerStatement(db: D1Database, customer: CustomerRecord) {
     phone_normalized = CASE WHEN excluded.phone_normalized <> '' THEN excluded.phone_normalized ELSE customers.phone_normalized END,
     primary_address = CASE WHEN excluded.updated_at >= customers.updated_at AND excluded.primary_address <> '' THEN excluded.primary_address ELSE customers.primary_address END,
     source = CASE WHEN customers.source = 'app' THEN customers.source ELSE excluded.source END,
-    updated_at = MAX(customers.updated_at, excluded.updated_at)`)
+    updated_at = GREATEST(customers.updated_at, excluded.updated_at)`)
     .bind(customer.id, customer.key, customer.displayName, customer.phone, customer.phoneNormalized,
       customer.primaryAddress, customer.source, customer.createdAt, customer.updatedAt);
 }
@@ -1022,7 +1022,7 @@ export async function getDashboard() {
     db.prepare("SELECT COALESCE(SUM(remaining_qty), 0) AS value FROM glasses_lots WHERE stock_status = 'INCOMING'").first<{ value: number }>(),
     db.prepare("SELECT COALESCE(SUM(included_box_remaining), 0) AS value FROM glasses_lots WHERE stock_status = 'INCOMING'").first<{ value: number }>(),
     db.prepare("SELECT COUNT(*) AS value FROM orders WHERE status = 'PROCESS'").first<{ value: number }>(),
-    db.prepare("SELECT COALESCE(SUM(profit), 0) AS value FROM orders WHERE status = 'DONE' AND substr(order_date, 1, 7) = substr(date('now'), 1, 7)").first<{ value: number }>(),
+    db.prepare("SELECT COALESCE(SUM(profit), 0) AS value FROM orders WHERE status = 'DONE' AND to_char(order_date::date, 'YYYY-MM') = to_char(CURRENT_DATE, 'YYYY-MM')").first<{ value: number }>(),
     db.prepare("SELECT COUNT(*) AS value FROM customers").first<{ value: number }>(),
     db.prepare("SELECT *, revenue - deposit AS outstanding FROM orders ORDER BY order_date DESC, created_at DESC LIMIT 20").all(),
     db.prepare(`SELECT c.id, c.display_name, c.phone, c.primary_address,
@@ -1046,17 +1046,17 @@ export async function getDashboard() {
       FROM glasses_lots g WHERE g.stock_status = 'AVAILABLE'
       GROUP BY g.sku HAVING SUM(g.remaining_qty) > 0 ORDER BY name`).all(),
     db.prepare("SELECT sku, MAX(name) AS name, SUM(remaining_qty) AS remaining_qty FROM box_lots GROUP BY sku HAVING SUM(remaining_qty) > 0 ORDER BY name").all(),
-    db.prepare(`SELECT sku, MAX(name) AS name, GROUP_CONCAT(DISTINCT supplier) AS suppliers,
+    db.prepare(`SELECT sku, MAX(name) AS name, STRING_AGG(DISTINCT supplier, ', ') AS suppliers,
       SUM(CASE WHEN stock_status = 'AVAILABLE' THEN remaining_qty ELSE 0 END) AS available_qty,
-      SUM(CASE WHEN stock_status = 'AVAILABLE' THEN MIN(remaining_qty, included_box_remaining) ELSE 0 END) AS with_box_qty,
-      SUM(CASE WHEN stock_status = 'AVAILABLE' THEN remaining_qty - MIN(remaining_qty, included_box_remaining) ELSE 0 END) AS without_box_qty,
+      SUM(CASE WHEN stock_status = 'AVAILABLE' THEN LEAST(remaining_qty, included_box_remaining) ELSE 0 END) AS with_box_qty,
+      SUM(CASE WHEN stock_status = 'AVAILABLE' THEN remaining_qty - LEAST(remaining_qty, included_box_remaining) ELSE 0 END) AS without_box_qty,
       SUM(CASE WHEN stock_status = 'INCOMING' THEN remaining_qty ELSE 0 END) AS incoming_qty,
       SUM(CASE WHEN stock_status = 'INCOMING' THEN included_box_remaining ELSE 0 END) AS incoming_box_qty
       FROM glasses_lots
       GROUP BY sku
       HAVING SUM(remaining_qty) > 0
       ORDER BY available_qty DESC, incoming_qty DESC, name`).all(),
-    db.prepare(`SELECT sku, MAX(name) AS name, GROUP_CONCAT(DISTINCT supplier) AS suppliers,
+    db.prepare(`SELECT sku, MAX(name) AS name, STRING_AGG(DISTINCT supplier, ', ') AS suppliers,
       SUM(loose_qty) AS loose_qty, SUM(included_qty) AS included_qty,
       SUM(loose_qty + included_qty) AS available_qty, SUM(incoming_qty) AS incoming_qty
       FROM (

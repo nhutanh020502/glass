@@ -67,6 +67,20 @@ async function createHelpers() {
   `);
   console.log('✓ Created group_concat(text, text)');
 
+  // 5. max(numeric, numeric) and min(numeric, numeric) for SQLite scalar compatibility
+  await sql.unsafe(`
+    CREATE OR REPLACE FUNCTION max(a numeric, b numeric)
+    RETURNS numeric LANGUAGE sql IMMUTABLE AS $$
+      SELECT GREATEST(a, b);
+    $$;
+
+    CREATE OR REPLACE FUNCTION min(a numeric, b numeric)
+    RETURNS numeric LANGUAGE sql IMMUTABLE AS $$
+      SELECT LEAST(a, b);
+    $$;
+  `);
+  console.log('✓ Created max and min scalar functions');
+
   // Test the exact failing query: substr(date('now'), 1, 7)
   const testRes = await sql.unsafe(`
     SELECT
@@ -75,6 +89,7 @@ async function createHelpers() {
       group_concat(display_name, ', ') as group_concat_test
     FROM (SELECT display_name FROM customers LIMIT 3) c;
   `);
+  console.log('Test res:', testRes);
   // Test the exact overview query that failed:
   const overviewRes = await sql.unsafe(`
     SELECT

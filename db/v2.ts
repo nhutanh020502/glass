@@ -1852,7 +1852,7 @@ export async function getTestLabDashboard() {
     database.prepare("SELECT *, on_hand-reserved AS available FROM test_inventory ORDER BY kind, name, sku"),
     database.prepare("SELECT * FROM test_orders ORDER BY order_date DESC, created_at DESC LIMIT 100"),
     database.prepare("SELECT * FROM test_order_items ORDER BY order_id, line_no"),
-    database.prepare("SELECT * FROM test_events ORDER BY occurred_at DESC, rowid DESC LIMIT 150"),
+    database.prepare("SELECT * FROM test_events ORDER BY occurred_at DESC, id DESC LIMIT 150"),
   ]);
   const metrics = (metricsResult.results?.[0] || {}) as Record<string, unknown>;
   const itemsByOrder = (orderItems.results as Record<string, unknown>[]).reduce<Record<string, Record<string, unknown>[]>>((result, item) => {
@@ -2066,7 +2066,7 @@ export async function getV2Dashboard(filters: Record<string, string | string[]> 
       (SELECT COUNT(*) FROM purchase_orders WHERE status IN ('ORDERED','PARTIAL')) AS open_purchase_orders,
       (SELECT COUNT(*) FROM orders WHERE workflow_status IN ('WAITING_STOCK','DEPOSIT_RECEIVED','ORDERING_SUPPLIER','GOODS_RECEIVED','READY_TO_SHIP','SHIPPING')) AS active_sales_orders,
       (SELECT COUNT(*) FROM customers) AS customers,
-      (SELECT COALESCE(SUM(profit),0) FROM orders WHERE workflow_status='COMPLETED' AND substr(order_date,1,7)=substr(date('now'),1,7)) AS monthly_profit`) },
+      (SELECT COALESCE(SUM(profit),0) FROM orders WHERE workflow_status='COMPLETED' AND substr(order_date,1,7)=to_char(CURRENT_DATE,'YYYY-MM')) AS monthly_profit`) },
     { key: "orderRows", statement: database.prepare(`SELECT o.*,
       COALESCE((SELECT SUM(p.amount) FROM order_payments p WHERE p.order_id=o.id),0) AS paid_amount,
       o.revenue + CASE WHEN o.ship_payer='RECIPIENT' THEN o.ship ELSE 0 END AS customer_total,
@@ -2083,13 +2083,13 @@ export async function getV2Dashboard(filters: Record<string, string | string[]> 
       WHERE order_id IN (${selectedOrderIdsSql}) ORDER BY order_id, line_no`).bind(...orderValues) },
     { key: "orderSources", statement: database.prepare(`SELECT source_supplier FROM (
       SELECT DISTINCT TRIM(source_supplier) AS source_supplier FROM orders
-        WHERE TRIM(source_supplier) <> '' AND INSTR(source_supplier, ',') = 0
+        WHERE TRIM(source_supplier) <> '' AND STRPOS(source_supplier, ',') = 0
       UNION SELECT DISTINCT TRIM(source_supplier) FROM order_items WHERE TRIM(source_supplier) <> ''
       UNION SELECT DISTINCT TRIM(box_source_supplier) FROM order_items WHERE TRIM(box_source_supplier) <> ''
       UNION SELECT DISTINCT TRIM(g.supplier) FROM inventory_reservations r JOIN glasses_lots g ON r.lot_kind='GLASSES' AND g.id=r.lot_id WHERE TRIM(g.supplier) <> ''
       UNION SELECT DISTINCT TRIM(b.supplier) FROM inventory_reservations r JOIN box_lots b ON r.lot_kind='BOX' AND b.id=r.lot_id WHERE TRIM(b.supplier) <> ''
     ) ORDER BY source_supplier`) },
-    { key: "reservationSources", statement: database.prepare(`SELECT order_id,GROUP_CONCAT(DISTINCT source) AS sources FROM (
+    { key: "reservationSources", statement: database.prepare(`SELECT order_id,STRING_AGG(DISTINCT source, ', ') AS sources FROM (
       SELECT order_id,TRIM(source_supplier) AS source FROM order_items WHERE TRIM(source_supplier)<>''
       UNION ALL SELECT order_id,TRIM(box_source_supplier) FROM order_items WHERE TRIM(box_source_supplier)<>''
       UNION ALL SELECT r.order_id,COALESCE(NULLIF(TRIM(g.supplier),''),NULLIF(TRIM(b.supplier),''))
@@ -2108,7 +2108,7 @@ export async function getV2Dashboard(filters: Record<string, string | string[]> 
         COALESCE((SELECT SUM(sp.amount) FROM supplier_payments sp WHERE sp.purchase_order_id=po.id),0) END AS outstanding,
       COALESCE((SELECT SUM(ordered_qty) FROM purchase_order_items pi WHERE pi.purchase_order_id=po.id),0) AS ordered_qty,
       COALESCE((SELECT SUM(received_qty) FROM purchase_order_items pi WHERE pi.purchase_order_id=po.id),0) AS received_qty,
-      COALESCE(NULLIF((SELECT GROUP_CONCAT(source, ', ') FROM (
+      COALESCE(NULLIF((SELECT STRING_AGG(source, ', ') FROM (
         SELECT DISTINCT TRIM(pi2.source_supplier) AS source FROM purchase_order_items pi2
         WHERE pi2.purchase_order_id=po.id AND TRIM(pi2.source_supplier)<>'' ORDER BY source
       )),''),po.supplier) AS tracking_sources,
@@ -2128,7 +2128,7 @@ export async function getV2Dashboard(filters: Record<string, string | string[]> 
     { key: "purchaseItems", statement: database.prepare(`SELECT pi.*, pi.ordered_qty-pi.received_qty AS pending_qty,
       COALESCE((SELECT SUM(gri.good_quantity) FROM goods_receipt_items gri WHERE gri.purchase_order_item_id=pi.id),0) AS good_received_qty,
       COALESCE((SELECT SUM(gri.defective_quantity) FROM goods_receipt_items gri WHERE gri.purchase_order_item_id=pi.id),0) AS defective_received_qty,
-      CASE WHEN pi.fulfillment_type='ATTACHED_BOX' THEN MAX(0,
+      CASE WHEN pi.fulfillment_type='ATTACHED_BOX' THEN GREATEST(0,
         COALESCE((SELECT SUM(gri.good_quantity) FROM goods_receipt_items gri
           WHERE gri.purchase_order_item_id=pi.id AND gri.box_stock_type='ATTACHED'),0)-pi.activated_qty) ELSE 0 END AS waiting_for_glasses
       FROM purchase_order_items pi WHERE pi.purchase_order_id IN (${selectedPurchaseIdsSql})
@@ -2143,14 +2143,14 @@ export async function getV2Dashboard(filters: Record<string, string | string[]> 
       CASE WHEN p.kind='GLASSES' THEN COALESCE((SELECT SUM(r.quantity) FROM inventory_reservations r WHERE r.bucket='GLASSES' AND r.sku=p.sku AND r.status='RESERVED'),0)
       ELSE COALESCE((SELECT SUM(r.quantity) FROM inventory_reservations r WHERE r.bucket IN ('LOOSE_BOX','ATTACHED_BOX') AND r.sku=p.sku AND r.status='RESERVED'),0) END AS reserved
       FROM products p WHERE p.active=1 ORDER BY p.kind, p.name`) },
-    { key: "glassesInventory", statement: database.prepare(`SELECT g.sku, MAX(g.name) AS name, GROUP_CONCAT(DISTINCT g.supplier) AS suppliers,
+    { key: "glassesInventory", statement: database.prepare(`SELECT g.sku, MAX(g.name) AS name, STRING_AGG(DISTINCT g.supplier, ', ') AS suppliers,
       MAX(COALESCE(g.included_box_sku,'')) AS included_box_sku,
       SUM(g.remaining_qty) AS on_hand,
       SUM(COALESCE((SELECT SUM(r.quantity) FROM inventory_reservations r WHERE r.bucket='GLASSES' AND r.lot_kind='GLASSES' AND r.lot_id=g.id AND r.status='RESERVED'),0)) AS reserved,
       SUM(g.remaining_qty)-SUM(COALESCE((SELECT SUM(r.quantity) FROM inventory_reservations r WHERE r.bucket='GLASSES' AND r.lot_kind='GLASSES' AND r.lot_id=g.id AND r.status='RESERVED'),0)) AS available,
       SUM(g.included_box_remaining) AS attached_boxes
       FROM glasses_lots g WHERE ${glassInventoryFilter.sql} GROUP BY g.sku HAVING SUM(g.remaining_qty)>0 ORDER BY name`).bind(...glassInventoryFilter.values) },
-    { key: "boxInventory", statement: database.prepare(`SELECT sku, MAX(name) AS name, GROUP_CONCAT(DISTINCT supplier) AS suppliers,
+    { key: "boxInventory", statement: database.prepare(`SELECT sku, MAX(name) AS name, STRING_AGG(DISTINCT supplier, ', ') AS suppliers,
       SUM(loose_qty) AS loose_qty, SUM(attached_qty) AS attached_qty, SUM(pending_attached_qty) AS pending_attached_qty,
       SUM(reserved_qty) AS reserved, SUM(loose_qty+attached_qty-reserved_qty) AS available
       FROM (
@@ -2162,7 +2162,7 @@ export async function getV2Dashboard(filters: Record<string, string | string[]> 
           COALESCE((SELECT SUM(r.quantity) FROM inventory_reservations r WHERE r.bucket='ATTACHED_BOX' AND r.lot_kind='GLASSES' AND r.lot_id=g.id AND r.status='RESERVED'),0)
           FROM glasses_lots g WHERE ${attachedBoxInventoryFilter.sql}
         UNION ALL
-        SELECT pi.sku,pi.name,COALESCE(NULLIF(TRIM(pi.source_supplier),''),po.supplier),0,0,MAX(0,
+        SELECT pi.sku,pi.name,COALESCE(NULLIF(TRIM(pi.source_supplier),''),po.supplier),0,0,GREATEST(0,
           COALESCE((SELECT SUM(gri.good_quantity) FROM goods_receipt_items gri
             WHERE gri.purchase_order_item_id=pi.id AND gri.box_stock_type='ATTACHED'),0)-pi.activated_qty),0
           FROM purchase_order_items pi JOIN purchase_orders po ON po.id=pi.purchase_order_id
@@ -2176,7 +2176,7 @@ export async function getV2Dashboard(filters: Record<string, string | string[]> 
     { key: "boxLots", statement: database.prepare(`SELECT b.*, 'BOX' AS kind,
       COALESCE((SELECT SUM(r.quantity) FROM inventory_reservations r WHERE r.lot_kind='BOX' AND r.lot_id=b.id AND r.bucket='LOOSE_BOX' AND r.status='RESERVED'),0) AS reserved_qty
       FROM box_lots b WHERE ${boxLotHistoryFilter.sql} ORDER BY b.received_at DESC,b.created_at DESC LIMIT 500`).bind(...boxLotHistoryFilter.values) },
-    { key: "movements", statement: database.prepare("SELECT * FROM inventory_movements ORDER BY occurred_at DESC, rowid DESC LIMIT 200") },
+    { key: "movements", statement: database.prepare("SELECT * FROM inventory_movements ORDER BY occurred_at DESC, id DESC LIMIT 200") },
     { key: "customers", statement: database.prepare(`SELECT c.id,c.display_name,c.phone,c.primary_address,COUNT(o.id) AS order_count,
       COALESCE(SUM(o.revenue),0) AS total_revenue,
       COALESCE(SUM(CASE WHEN o.workflow_status IN ('CANCELLED','RETURNED','REFUNDED') THEN 0
