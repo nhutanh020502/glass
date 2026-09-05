@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import postgres from 'postgres';
 import { createClient } from '@supabase/supabase-js';
 import dotenv from 'dotenv';
@@ -16,9 +17,9 @@ const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_P
 export const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
 
 // Postgres client connection singleton
-let pgClient: any = null;
+let pgClient: postgres.Sql | null = null;
 
-export function getPg(): any {
+export function getPg(): postgres.Sql {
   if (!pgClient) {
     const connStr = process.env.DATABASE_URL || process.env.DIRECT_URL;
     if (!connStr || connStr.includes('[YOUR_PASSWORD]')) {
@@ -35,7 +36,7 @@ export function getPg(): any {
   return pgClient;
 }
 
-export function translateSql(rawSql: string, params: any[] = []) {
+export function translateSql(rawSql: string, params: unknown[] = []): { query: string; params: unknown[] } {
   let query = rawSql.trim();
 
   // 1. PRAGMA table_info(tableName)
@@ -103,25 +104,27 @@ export function createDbAdapter(): DatabaseAdapter {
         },
         async all<T = any>() {
           const { query, params } = translateSql(rawQuery, boundParams);
-          const rows = await sql.unsafe(query, params);
-          return { results: rows as T[], success: true };
+          const rows = await sql.unsafe(query, params as never);
+          return { results: (rows as unknown) as T[], success: true };
         },
         async run() {
           const { query, params } = translateSql(rawQuery, boundParams);
-          const result = await sql.unsafe(query, params);
-          const count = result && typeof (result as any).count === 'number' ? (result as any).count : 1;
+          const result = await sql.unsafe(query, params as never);
+          const count = typeof (result as unknown as { count?: number }).count === 'number'
+            ? (result as unknown as { count?: number }).count
+            : 1;
           return { success: true, meta: { changes: count } };
         },
         async first<T = any>(col?: string) {
           const { query, params } = translateSql(rawQuery, boundParams);
-          const rows = await sql.unsafe(query, params);
+          const rows = await sql.unsafe(query, params as never);
           if (!rows || rows.length === 0) return null;
-          if (col) return (rows[0] as any)[col] as T;
-          return rows[0] as T;
+          if (col) return (rows[0] as Record<string, unknown>)[col] as T;
+          return (rows[0] as unknown) as T;
         },
         async raw() {
           const { query, params } = translateSql(rawQuery, boundParams);
-          return await sql.unsafe(query, params);
+          return await sql.unsafe(query, params as never);
         },
       };
 
