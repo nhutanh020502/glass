@@ -19,9 +19,11 @@ export async function POST(request: Request) {
       },
     });
   } catch (error) {
+    const message = error instanceof Error ? error.message : 'Không thể đăng ký tài khoản.';
+    const isLocked = message.includes('tạm khóa đăng ký');
     return Response.json(
-      { error: error instanceof Error ? error.message : 'Không thể đăng ký tài khoản.' },
-      { status: 400 }
+      { error: message },
+      { status: isLocked ? 403 : 400 }
     );
   }
 }
