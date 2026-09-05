@@ -2,6 +2,8 @@
 
 import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import TestLab from "./test-lab";
+import AuthView, { type LoggedUser } from "./auth-view";
+import UsersTab from "./users-tab";
 
 type Row = Record<string, unknown>;
 type DashboardData = {
@@ -95,6 +97,8 @@ function purchaseLinesFromOrder(order: Row): PurchaseLine[] {
 }
 
 export default function Dashboard() {
+  const [currentUser, setCurrentUser] = useState<LoggedUser | null>(null);
+  const [authChecking, setAuthChecking] = useState(true);
   const [data, setData] = useState<DashboardData>(EMPTY_DATA);
   const [tab, setTab] = useState("overview");
   const [modal, setModal] = useState<string | null>(null);
@@ -127,13 +131,23 @@ export default function Dashboard() {
   const pendingRequests = useRef(0);
   const formOptionsReady = useRef(false);
 
+  useEffect(() => {
+    fetch("/api/auth/me")
+      .then((res) => res.json() as Promise<{ user?: LoggedUser | null }>)
+      .then((resData) => {
+        setCurrentUser(resData.user || null);
+      })
+      .catch(() => setCurrentUser(null))
+      .finally(() => setAuthChecking(false));
+  }, []);
+
   const setRequestPending = useCallback((delta:number) => {
     pendingRequests.current = Math.max(0, pendingRequests.current + delta);
     setLoading(pendingRequests.current > 0);
   }, []);
 
   const loadPage = useCallback(async (scope:string, filters:OrderFilters, stockFilters:InventoryFilters) => {
-    if (["analytics", "test-lab", "manual"].includes(scope)) return true;
+    if (["analytics", "users", "test-lab", "manual"].includes(scope)) return true;
     pageRequests.current.get(scope)?.abort();
     const controller = new AbortController();
     pageRequests.current.set(scope, controller);
@@ -198,7 +212,7 @@ export default function Dashboard() {
   useEffect(() => {
     const requests = pageRequests.current;
     const hashTab = window.location.hash.replace("#", "");
-    const initialTab = ["overview","analytics","sales","purchases","inventory","products","defects","customers","activity","test-lab","manual"].includes(hashTab) ? hashTab : "overview";
+    const initialTab = ["overview","analytics","sales","purchases","inventory","products","defects","customers","activity","users","test-lab","manual"].includes(hashTab) ? hashTab : "overview";
     tabRef.current = initialTab;
     // eslint-disable-next-line react-hooks/set-state-in-effect -- initialize the view from the URL hash
     if (initialTab !== "overview") setTab(initialTab);
@@ -300,9 +314,52 @@ export default function Dashboard() {
   const salesRevenue = salesLines.reduce((sum,line)=>sum+Number(line.quantity||0)*Number(line.unitPrice||0),0);
   const salesCustomerTotal = salesRevenue + (salesShipPayer === "RECIPIENT" ? salesShip : 0);
 
+  if (authChecking) {
+    return (
+      <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", background: "#0c1424", color: "#f5c866" }}>
+        <div style={{ textAlign: "center" }}>
+          <div style={{ width: "48px", height: "48px", margin: "0 auto 16px", border: "2px solid #f5c866", borderRadius: "14px", display: "grid", placeItems: "center", fontWeight: 800, fontSize: "18px" }}>OR</div>
+          <p style={{ margin: 0, fontSize: "13px", color: "#94a3b8" }}>Đang kiểm tra bảo mật phiên đăng nhập...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!currentUser) {
+    return <AuthView onSuccess={(user) => setCurrentUser(user)} />;
+  }
+
   return <div className="app-shell v2-shell">
-    <aside className="sidebar"><div className="brand"><div className="brand-mark">OR</div><div><strong>ORD Studio</strong><span>Order & Stock OS</span></div></div><nav aria-label="Điều hướng chính">{[["overview","⌂","Tổng quan"],["analytics","▥","Dashboard bán"],["sales","▤","Đơn bán"],["purchases","↓","Đơn nhập"],["inventory","◇","Kiểm soát kho"],["products","□","Sản phẩm"],["defects","!","Sản phẩm lỗi"],["customers","♙","Khách hàng"],["activity","↻","Nhật ký kho"],["test-lab","T","Khu vực test"],["manual","?","Hướng dẫn"]].map(([id,icon,label]) => <button key={id} type="button" className={`nav-item nav-button ${tab === id ? "active" : ""}`} onClick={() => changeTab(id)}><span>{icon}</span>{label}</button>)}</nav><div className="sidebar-note"><span className="dot" /><div><strong>{loading||salesDashboardLoading ? "Đang đồng bộ" : "Database đã đồng bộ"}</strong><p>Tài khoản riêng · dữ liệu máy chủ</p></div></div></aside>
-    <main className="workspace"><header className="topbar"><div><p className="eyebrow">ORD STUDIO · 2026</p><h1>{tab === "overview" ? "Trung tâm vận hành" : tab === "analytics" ? "Dashboard bán hàng" : tab === "sales" ? "Đơn hàng khách" : tab === "purchases" ? "Đơn nhập hàng" : tab === "inventory" ? "Kiểm soát kho" : tab === "products" ? "Danh mục sản phẩm" : tab === "defects" ? "Sản phẩm lỗi" : tab === "customers" ? "Khách hàng" : tab === "activity" ? "Lịch sử biến động kho" : tab === "test-lab" ? "Khu vực test nhập – bán" : "Hướng dẫn sử dụng"}</h1></div>{tab === "test-lab" ? <div className="test-header-flag"><strong>TEST</strong><span>Tách biệt dữ liệu thật</span></div> : <div className="top-actions"><button className="icon-button" onClick={() => tab === "analytics" ? void loadSalesDashboard(salesDashboardFilters) : void load()} aria-label="Làm mới">↻</button><button className="button secondary" onClick={openPurchase}>+ Đơn nhập</button><button className="button primary" onClick={() => openSales()}>+ Đơn bán</button></div>}</header>
+    <aside className="sidebar">
+      <div className="brand"><div className="brand-mark">OR</div><div><strong>ORD Studio</strong><span>Order & Stock OS</span></div></div>
+      <nav aria-label="Điều hướng chính">{[["overview","⌂","Tổng quan"],["analytics","▥","Dashboard bán"],["sales","▤","Đơn bán"],["purchases","↓","Đơn nhập"],["inventory","◇","Kiểm soát kho"],["products","□","Sản phẩm"],["defects","!","Sản phẩm lỗi"],["customers","♙","Khách hàng"],["activity","↻","Nhật ký kho"],["users","🛡","Quản lý User"],["test-lab","T","Khu vực test"],["manual","?","Hướng dẫn"]].map(([id,icon,label]) => <button key={id} type="button" className={`nav-item nav-button ${tab === id ? "active" : ""}`} onClick={() => changeTab(id)}><span>{icon}</span>{label}</button>)}</nav>
+      
+      {/* Logged in user profile & logout */}
+      <div className="sidebar-profile-box">
+        <div className="sidebar-profile-row">
+          <div className="sidebar-avatar-bubble">{currentUser.email.slice(0, 2).toUpperCase()}</div>
+          <div className="sidebar-user-text">
+            <strong title={currentUser.email}>{currentUser.email}</strong>
+            <span className={`user-role-tag ${currentUser.role.toLowerCase()}`}>
+              {currentUser.role === "ADMIN" ? "★ Quản trị viên" : "Nhân viên"}
+            </span>
+          </div>
+        </div>
+        <button
+          type="button"
+          className="sidebar-logout-btn"
+          onClick={async () => {
+            await fetch("/api/auth/logout", { method: "POST" });
+            setCurrentUser(null);
+          }}
+        >
+          Đăng xuất ⎋
+        </button>
+      </div>
+
+      <div className="sidebar-note"><span className="dot" /><div><strong>{loading||salesDashboardLoading ? "Đang đồng bộ" : "Database đã đồng bộ"}</strong><p>Tài khoản riêng · dữ liệu máy chủ</p></div></div>
+    </aside>
+    <main className="workspace"><header className="topbar"><div><p className="eyebrow">ORD STUDIO · 2026</p><h1>{tab === "overview" ? "Trung tâm vận hành" : tab === "analytics" ? "Dashboard bán hàng" : tab === "sales" ? "Đơn hàng khách" : tab === "purchases" ? "Đơn nhập hàng" : tab === "inventory" ? "Kiểm soát kho" : tab === "products" ? "Danh mục sản phẩm" : tab === "defects" ? "Sản phẩm lỗi" : tab === "customers" ? "Khách hàng" : tab === "activity" ? "Lịch sử biến động kho" : tab === "users" ? "Quản lý Người dùng & Phân quyền" : tab === "test-lab" ? "Khu vực test nhập – bán" : "Hướng dẫn sử dụng"}</h1></div>{tab === "test-lab" ? <div className="test-header-flag"><strong>TEST</strong><span>Tách biệt dữ liệu thật</span></div> : <div className="top-actions"><button className="icon-button" onClick={() => tab === "analytics" ? void loadSalesDashboard(salesDashboardFilters) : void load()} aria-label="Làm mới">↻</button><button className="button secondary" onClick={openPurchase}>+ Đơn nhập</button><button className="button primary" onClick={() => openSales()}>+ Đơn bán</button></div>}</header>
       <div className="content">{notice && <div className="notice success-notice">{notice}</div>}{error && <div className="notice error-notice">{error}</div>}
         {tab === "overview" && <><section className="hero-card"><div><p className="eyebrow light">TỒN KHO CÓ THỂ BÁN</p><h2>{glassesAvailable} kính và {boxesAvailable} box đang sẵn sàng.</h2><p>Tồn thực tế được tách riêng với số đang giữ cho khách. Box nhập lẻ chỉ tăng kho khi bạn xác nhận đã nhận; box full-box về trước vẫn chờ kính.</p></div><div className="hero-stats"><div><strong>{String(m.open_purchase_orders || 0)}</strong><span>đơn nhập đang mở</span></div><div><strong>{String(m.active_sales_orders || 0)}</strong><span>đơn khách đang xử lý</span></div></div></section><section className="metrics v2-metrics"><Metric icon="◇" tone="blue" label="Kính thực tế" value={qty(m.glasses_on_hand)} note={`Đang giữ ${qty(m.glasses_reserved)}`} /><Metric icon="✓" tone="green" label="Kính có thể bán" value={qty(glassesAvailable)} note="Thực tế − đang giữ" /><Metric icon="□" tone="amber" label="Box thực tế" value={qty(m.boxes_on_hand)} note={`Đang giữ ${qty(m.boxes_reserved)}`} /><Metric icon="▤" tone="violet" label="Đơn đang xử lý" value={qty(m.active_sales_orders)} note="Chờ nhập hàng đến đang giao" /><Metric icon="₫" tone="green" label="Lãi tháng này" value={money(m.monthly_profit)} note={`${qty(m.customers)} khách hàng`} /></section><div className="two-column"><section className="panel orders-panel"><PanelTitle eyebrow="CẦN XỬ LÝ" title="Đơn nhập chưa nhận đủ" action="Xem tất cả →" onAction={() => changeTab("purchases")} /><PurchaseTable orders={data.purchaseOrders.filter((order) => ["DRAFT","ORDERED","PARTIAL"].includes(String(order.status))).slice(0,6)} onOpen={(order) => { setSelected(order); setModal("purchase-detail"); }} compact /></section><section className="panel quick-panel"><PanelTitle eyebrow="LUỒNG LÀM VIỆC" title="Thao tác nhanh" /><button className="quick-action" onClick={openPurchase}><span className="quick-symbol">DN</span><div><strong>Tạo đơn nhập hàng</strong><small>Nhiều kính và box trong một đơn</small></div><b>→</b></button><button className="quick-action" onClick={() => openSales()}><span className="quick-symbol">DH</span><div><strong>Tạo đơn khách</strong><small>Chọn chờ nhập hoặc giữ kính có sẵn</small></div><b>→</b></button><button className="quick-action" onClick={() => changeTab("inventory")}><span className="quick-symbol">KK</span><div><strong>Kiểm kê kho</strong><small>Sửa lô, tăng/giảm, mất/hỏng</small></div><b>→</b></button></section></div><section className="panel orders-panel"><PanelTitle eyebrow="ĐƠN BÁN GẦN NHẤT" title="Theo dõi xử lý, nguồn và lãi" action="Xem tất cả →" onAction={() => changeTab("sales")} /><SalesTable orders={data.orders.slice(0,8)} onOpen={(order) => { setSelected(order); setModal("sales-detail"); }} /></section></>}
         {tab === "analytics" && <SalesAnalyticsDashboard data={salesDashboard} filters={salesDashboardFilters} setFilters={setSalesDashboardFilters} loading={salesDashboardLoading} onApply={() => void loadSalesDashboard(salesDashboardFilters)} onReset={() => {const reset:SalesDashboardFilters={fromDate:"2026-01-01",toDate:todayValue(),sources:[],glasses:""};setSalesDashboardFilters(reset);void loadSalesDashboard(reset);}} />}
@@ -350,6 +407,7 @@ export default function Dashboard() {
         {tab === "defects" && <section className="panel orders-panel page-panel"><PanelTitle eyebrow="KIỂM SOÁT HÀNG LỖI" title="Sản phẩm lỗi được tách khỏi kho có thể bán" /><div className="defect-rule"><span>!</span><div><strong>Hàng lỗi không được cộng vào tồn kho bán hàng</strong><p>Kính hoặc box lỗi được ghi nhận theo từng phiếu nhận, kèm nguồn, giá vốn và lý do lỗi để dễ đối soát.</p></div></div><div className="product-kind-tabs defect-kind-tabs" role="tablist" aria-label="Loại sản phẩm lỗi"><button type="button" role="tab" aria-selected={defectKind === "GLASSES"} className={defectKind === "GLASSES" ? "active" : ""} onClick={() => {setDefectKind("GLASSES");setDefectSearch("");}}><span>◇</span><div><strong>Kính lỗi</strong><small>Kính móp, trầy, gãy hoặc sai mẫu</small></div><b>{data.defectiveProducts.filter((item) => item.kind === "GLASSES").reduce((sum,item) => sum+Number(item.quantity||0),0)}</b></button><button type="button" role="tab" aria-selected={defectKind === "BOX"} className={defectKind === "BOX" ? "active" : ""} onClick={() => {setDefectKind("BOX");setDefectSearch("");}}><span>□</span><div><strong>Box lỗi</strong><small>Box móp, rách hoặc không sử dụng được</small></div><b>{data.defectiveProducts.filter((item) => item.kind === "BOX").reduce((sum,item) => sum+Number(item.quantity||0),0)}</b></button></div><div className="simple-toolbar"><input placeholder={`Tìm ${defectKind === "GLASSES" ? "kính" : "box"} lỗi, nguồn, mã đơn hoặc lý do…`} value={defectSearch} onChange={(event) => setDefectSearch(event.target.value)} /><span>{qty(filteredDefects.reduce((sum,item) => sum+Number(item.quantity||0),0))} sản phẩm lỗi</span></div><DefectsTable defects={filteredDefects} defectKind={defectKind} /></section>}
         {tab === "customers" && <section className="panel orders-panel page-panel"><PanelTitle eyebrow="HỒ SƠ KHÁCH HÀNG" title="Thông tin, lịch sử mua và tổng lãi" /><CustomersTable customers={data.customers} /></section>}
         {tab === "activity" && <section className="panel orders-panel page-panel"><PanelTitle eyebrow="TRUY VẾT KHO" title="Mọi lần nhập, giữ, bán, trả và điều chỉnh" /><MovementsTable movements={data.movements} /></section>}
+        {tab === "users" && <UsersTab currentUser={currentUser} />}
         {tab === "test-lab" && <TestLab />}
         {tab === "manual" && <Manual />}
       </div>

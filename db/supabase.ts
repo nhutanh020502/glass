@@ -8,10 +8,10 @@ let pgClient: postgres.Sql | null = null;
 
 export function getPg(): postgres.Sql {
   if (!pgClient) {
-    const connStr = process.env.DATABASE_URL || process.env.DIRECT_URL || 'postgresql://postgres.wowjlldnblegwbdoqtrf:fo93plysY215fyrl@aws-0-ap-southeast-1.pooler.supabase.com:6543/postgres';
+    const connStr = process.env.DATABASE_URL || process.env.DIRECT_URL;
     if (!connStr || connStr.includes('[YOUR_PASSWORD]')) {
       throw new Error(
-        'Vui lòng cấu hình mật khẩu Supabase trong biến DATABASE_URL ở file .env.local.'
+        'Vui lòng cấu hình biến DATABASE_URL trong file .env.local hoặc Vercel Environment Variables.'
       );
     }
     pgClient = postgres(connStr, {
