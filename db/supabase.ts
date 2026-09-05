@@ -1,0 +1,144 @@
+import postgres from 'postgres';
+import { createClient } from '@supabase/supabase-js';
+import dotenv from 'dotenv';
+import path from 'path';
+
+// Load environment variables
+try {
+  dotenv.config({ path: path.resolve(process.cwd(), '.env.local') });
+  dotenv.config();
+} catch {}
+
+const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://xbvonjzkqtdcfqxmqckj.supabase.co';
+const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
+
+// Supabase REST client
+export const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
+
+// Postgres client connection singleton
+let pgClient: any = null;
+
+export function getPg(): any {
+  if (!pgClient) {
+    const connStr = process.env.DATABASE_URL || process.env.DIRECT_URL;
+    if (!connStr || connStr.includes('[YOUR_PASSWORD]')) {
+      throw new Error(
+        'Vui lòng cấu hình mật khẩu Supabase trong biến DATABASE_URL ở file .env.local.'
+      );
+    }
+    pgClient = postgres(connStr, {
+      ssl: 'require',
+      max: 10,
+      idle_timeout: 20,
+    });
+  }
+  return pgClient;
+}
+
+export function translateSql(rawSql: string, params: any[] = []) {
+  let query = rawSql.trim();
+
+  // 1. PRAGMA table_info(tableName)
+  const pragmaMatch = query.match(/PRAGMA\s+table_info\(([^)]+)\)/i);
+  if (pragmaMatch) {
+    const table = pragmaMatch[1].trim().replace(/['"`]/g, '');
+    return {
+      query: `SELECT column_name AS name FROM information_schema.columns WHERE table_schema = 'public' AND table_name = '${table}'`,
+      params: [],
+    };
+  }
+
+  // 2. PRAGMA optimize
+  if (/PRAGMA\s+optimize/i.test(query)) {
+    return { query: 'SELECT 1', params: [] };
+  }
+
+  // 3. INSERT OR REPLACE INTO app_migrations
+  if (/INSERT\s+OR\s+REPLACE\s+INTO\s+app_migrations/i.test(query)) {
+    query = query.replace(
+      /INSERT\s+OR\s+REPLACE\s+INTO\s+app_migrations\s*\(([^)]+)\)\s*VALUES\s*\(([^)]+)\)/i,
+      'INSERT INTO "app_migrations" ($1) VALUES ($2) ON CONFLICT ("key") DO UPDATE SET "completed_at" = EXCLUDED."completed_at", "note" = EXCLUDED."note"'
+    );
+  }
+
+  // 4. INSERT OR IGNORE INTO
+  if (/INSERT\s+OR\s+IGNORE\s+INTO/i.test(query)) {
+    query = query.replace(/INSERT\s+OR\s+IGNORE\s+INTO/i, 'INSERT INTO');
+    if (!/ON\s+CONFLICT/i.test(query)) {
+      query += ' ON CONFLICT DO NOTHING';
+    }
+  }
+
+  // 5. Replace '?' with '$1, $2, ...'
+  let paramIndex = 1;
+  query = query.replace(/\?/g, () => `$${paramIndex++}`);
+
+  return { query, params };
+}
+
+export interface PreparedStatement {
+  bind(...params: any[]): PreparedStatement;
+  all<T = any>(): Promise<{ results: T[]; success: boolean }>;
+  run(): Promise<{ success: boolean; meta: { changes?: number } }>;
+  first<T = any>(col?: string): Promise<T | null>;
+  raw(): Promise<any>;
+}
+
+export interface DatabaseAdapter {
+  prepare(rawQuery: string): PreparedStatement;
+  batch(statements: any[]): Promise<any[]>;
+}
+
+export function createDbAdapter(): DatabaseAdapter {
+  const sql = getPg();
+
+  return {
+    prepare(rawQuery: string): PreparedStatement {
+      let boundParams: any[] = [];
+
+      const statement: PreparedStatement = {
+        bind(...params: any[]) {
+          boundParams = params;
+          return statement;
+        },
+        async all<T = any>() {
+          const { query, params } = translateSql(rawQuery, boundParams);
+          const rows = await sql.unsafe(query, params);
+          return { results: rows as T[], success: true };
+        },
+        async run() {
+          const { query, params } = translateSql(rawQuery, boundParams);
+          const result = await sql.unsafe(query, params);
+          const count = result && typeof (result as any).count === 'number' ? (result as any).count : 1;
+          return { success: true, meta: { changes: count } };
+        },
+        async first<T = any>(col?: string) {
+          const { query, params } = translateSql(rawQuery, boundParams);
+          const rows = await sql.unsafe(query, params);
+          if (!rows || rows.length === 0) return null;
+          if (col) return (rows[0] as any)[col] as T;
+          return rows[0] as T;
+        },
+        async raw() {
+          const { query, params } = translateSql(rawQuery, boundParams);
+          return await sql.unsafe(query, params);
+        },
+      };
+
+      return statement;
+    },
+
+    async batch(statements: any[]): Promise<any[]> {
+      const results: any[] = [];
+      for (const stmt of statements) {
+        const res = await stmt.all();
+        results.push(res);
+      }
+      return results;
+    },
+  };
+}
+
+export function getDb(): DatabaseAdapter {
+  return createDbAdapter();
+}

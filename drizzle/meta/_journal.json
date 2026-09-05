@@ -1,0 +1,76 @@
+{
+  "version": "7",
+  "dialect": "sqlite",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "6",
+      "when": 1787327149509,
+      "tag": "0000_hot_rachel_grey",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "6",
+      "when": 1787555155058,
+      "tag": "0001_opposite_zzzax",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1787560182168,
+      "tag": "0002_first_avengers",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "6",
+      "when": 1787589667312,
+      "tag": "0003_tearful_maelstrom",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "6",
+      "when": 1787593319586,
+      "tag": "0004_defective_receipts",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "6",
+      "when": 1787630400000,
+      "tag": "0005_test_lab",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "6",
+      "when": 1787724000000,
+      "tag": "0006_purchase_ship",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "6",
+      "when": 1787756139552,
+      "tag": "0007_lean_spirit",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "6",
+      "when": 1787893200000,
+      "tag": "0008_purchase_batch_sources",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "6",
+      "when": 1787896800000,
+      "tag": "0009_runtime_schema_ready",
+      "breakpoints": true
+    }
+  ]
+}
