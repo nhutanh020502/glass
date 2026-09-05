@@ -210,6 +210,8 @@ export default function Dashboard() {
   }, []);
 
   useEffect(() => {
+    if (!currentUser) return;
+    setError("");
     const requests = pageRequests.current;
     const hashTab = window.location.hash.replace("#", "");
     const initialTab = ["overview","analytics","sales","purchases","inventory","products","defects","customers","activity","users","test-lab","manual"].includes(hashTab) ? hashTab : "overview";
@@ -222,7 +224,7 @@ export default function Dashboard() {
       for (const controller of requests.values()) controller.abort();
       salesDashboardRequest.current?.abort();
     };
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [currentUser]); // eslint-disable-line react-hooks/exhaustive-deps
 
   function changeTab(next: string) {
     const previous = tabRef.current;
@@ -326,7 +328,14 @@ export default function Dashboard() {
   }
 
   if (!currentUser) {
-    return <AuthView onSuccess={(user) => setCurrentUser(user)} />;
+    return (
+      <AuthView
+        onSuccess={(user) => {
+          setError("");
+          setCurrentUser(user);
+        }}
+      />
+    );
   }
 
   return <div className="app-shell v2-shell">
@@ -351,6 +360,7 @@ export default function Dashboard() {
           onClick={async () => {
             await fetch("/api/auth/logout", { method: "POST" });
             setCurrentUser(null);
+            setError("");
           }}
         >
           Đăng xuất ⎋
