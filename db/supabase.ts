@@ -11,7 +11,8 @@ try {
 } catch {}
 
 const SUPABASE_URL = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://wowjlldnblegwbdoqtrf.supabase.co';
-const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
+const DEFAULT_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Indvd2psbGRuYmxlZ3diZG9xdHJmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODg1NDIwMzUsImV4cCI6MjEwNDExODAzNX0.KFYwsYIaXoyYdcxipEiY0rmwNTtp13DQX3WXUWhIRNc';
+const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || DEFAULT_KEY;
 
 // Supabase REST client
 export const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
@@ -21,7 +22,7 @@ let pgClient: postgres.Sql | null = null;
 
 export function getPg(): postgres.Sql {
   if (!pgClient) {
-    const connStr = process.env.DATABASE_URL || process.env.DIRECT_URL;
+    const connStr = process.env.DATABASE_URL || process.env.DIRECT_URL || 'postgresql://postgres.wowjlldnblegwbdoqtrf:fo93plysY215fyrl@aws-0-ap-southeast-1.pooler.supabase.com:6543/postgres';
     if (!connStr || connStr.includes('[YOUR_PASSWORD]')) {
       throw new Error(
         'Vui lòng cấu hình mật khẩu Supabase trong biến DATABASE_URL ở file .env.local.'
